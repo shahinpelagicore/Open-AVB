@@ -58,7 +58,7 @@
 /* global variables */
 int control_socket = -1;
 volatile int halt_tx = 0;
-volatile int listeners = 0;
+volatile int listeners = 1;
 volatile int mrp_okay;
 volatile int mrp_error = 0;;
 volatile int domain_a_valid = 0;
@@ -67,7 +67,6 @@ int domain_class_b_id;
 int domain_class_b_priority;
 int domain_class_b_vid;
 int g_start_feed_socket = 0;
-device_t igb_dev;
 pthread_t monitor_thread;
 pthread_attr_t monitor_attr;
 uint32_t payload_length;
@@ -83,13 +82,17 @@ unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
 /* (1) packet every 125 usec */
 #define PACKET_IPG		125000
 
-#define USE_MRPD 1
+//#define USE_MRPD 1
 
 #ifdef USE_MRPD
 
 int domain_class_a_id;
 int domain_class_a_priority;
 int domain_class_a_vid;
+
+
+
+
 
 int send_mrp_msg(char *notify_data, int notify_len)
 {
@@ -612,6 +615,16 @@ void sigint_handler(int signum)
 	halt_tx = signum;
 }
 
+void dbg_print_packet(uint8_t *buffer, int length)
+{
+  int i;
+
+  for (i = 0; i < length; i=i+2)
+    printf ("%02x%02x:", buffer[i], buffer[i+1]);
+  printf("\n");
+}
+
+
 int get_mac_addr(int8_t *iface)
 {
 	int lsock = socket(PF_PACKET, SOCK_RAW, htons(0x800));
@@ -638,7 +651,6 @@ int get_mac_addr(int8_t *iface)
 
 int main(int argc, char *argv[])
 {
-	struct igb_dma_alloc a_page;
 	struct igb_packet a_packet;
 	struct igb_packet *tmp_packet;
 	struct igb_packet *cleaned_packets;
@@ -666,6 +678,14 @@ int main(int argc, char *argv[])
 	long long int frame_sequence = 0;
 	struct sched_param sched;
 
+	int rc, lsock_audio;
+	static int pkt_ready = 0;
+	struct ifreq ifr;
+    
+	struct sched_param params;
+	struct sockaddr_ll socket_address;
+
+	
 	if (argc < 2) {
 		fprintf(stderr,"%s <if_name> <payload>\n", argv[0]);
 		return -1;
@@ -676,6 +696,27 @@ int main(int argc, char *argv[])
 	payload_length = atoi(argv[2]);;
 	packet_size += sizeof(six1883_header) + sizeof(seventeen22_header) + sizeof(eth_header);
 
+
+
+	lsock_audio = socket(AF_PACKET, SOCK_RAW, IPPROTO_RAW);
+	
+	/* Init tx parameters */
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, (const char *)iface, sizeof(ifr.ifr_name));
+	
+	if (ioctl(lsock_audio, SIOCGIFINDEX, &ifr) < 0)
+	{
+		printf("SIOCGIFINDEX");
+	}
+	
+	/* Index of the network device */
+	socket_address.sll_ifindex = ifr.ifr_ifindex;
+	/* Address length*/
+	socket_address.sll_halen = ETH_ALEN;
+	memcpy(socket_address.sll_addr,  DEST_ADDR, sizeof(DEST_ADDR));
+
+
+
 #ifdef USE_MRPD
 	err = mrp_connect();
 	if (err) {
@@ -683,26 +724,6 @@ int main(int argc, char *argv[])
 		return (errno);
 	}
 #endif
-
-	err = pci_connect(&igb_dev);
-	if (err) {
-		fprintf(stderr, "connect failed (%s) - are you running as root?\n", strerror(errno));
-		return (errno);
-	}
-
-	err = igb_init(&igb_dev);
-	if (err) {
-		fprintf(stderr, "init failed (%s) - is the driver really loaded?\n", strerror(errno));
-		return (errno);
-	}
-
-	err = igb_dma_malloc_page(&igb_dev, &a_page);
-	if (err) {
-		fprintf(stderr, "malloc failed (%s) - out of memory?\n", strerror(errno));
-		return (errno);
-	}
-
-	signal(SIGINT, sigint_handler);
 
 	err = get_mac_addr(iface);
 	if (err) {
@@ -726,16 +747,11 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "detected domain Class A PRIO=%d VID=%04x...\n", a_priority, a_vid);
 #endif
 
-	igb_set_class_bandwidth(&igb_dev, PACKET_IPG / 125000, 0, packet_size - 22, 0);
-
 	memset(STREAM_ID, 0, sizeof(STREAM_ID));
 	memcpy(STREAM_ID, STATION_ADDR, sizeof(STATION_ADDR));
 
 	a_packet.dmatime = a_packet.attime = a_packet.flags = 0;
-	a_packet.map.paddr = a_page.dma_paddr;
-	a_packet.map.mmap_size = a_page.mmap_size;
 	a_packet.offset = 0;
-	a_packet.vaddr = a_page.dma_vaddr + a_packet.offset;
 	a_packet.len = packet_size;
 	free_packets = NULL;
 	seq_number = 0;
@@ -754,7 +770,6 @@ int main(int argc, char *argv[])
 	avb_set_1722_length(h1722, htons(payload_length + sizeof(six1883_header)));
 	avb_set_1722_stream_id(h1722,reverse_64(STREAMID));
 	avb_set_1722_sid_valid(h1722, 0x1);
-
 	
 	/*initalize h61883 header */
 	avb_initialize_61883_to_defaults(h61883);
@@ -773,24 +788,7 @@ int main(int argc, char *argv[])
 
 	/* set 1772 eth type */
 	avb_1722_set_eth_type(stream_packet);
-
-	/* divide the dma page into buffers for packets */
-	for (i = 1; i < ((a_page.mmap_size) / packet_size); i++) {
-		tmp_packet = malloc(sizeof(struct igb_packet));
-		if (NULL == tmp_packet) {
-			fprintf(stderr, "failed to allocate igb_packet memory!\n");
-			return (errno);
-		}
-		*tmp_packet = a_packet;
-		tmp_packet->offset = (i * packet_size);
-		tmp_packet->vaddr += tmp_packet->offset;
-		tmp_packet->next = free_packets;
-		memset(tmp_packet->vaddr, 0, packet_size);	/* MAC header at least */
-		memcpy(((char *)tmp_packet->vaddr), stream_packet, frame_size);
-		tmp_packet->len = frame_size;
-		free_packets = tmp_packet;
-	}
-
+	
 #ifdef USE_MRPD
 	/* 
 	 * subtract 16 bytes for the MAC header/Q-tag - pktsz is limited to the 
@@ -808,16 +806,8 @@ int main(int argc, char *argv[])
 	memset(&sched, 0 , sizeof (sched));
 	sched.sched_priority = 1;
 	sched_setscheduler(0, SCHED_RR, &sched);
-
 	while (listeners && !halt_tx)
 	{
-		tmp_packet = free_packets;
-		if (NULL == tmp_packet)
-			goto cleanup;
-
-		stream_packet = ((char *)tmp_packet->vaddr);
-		free_packets = tmp_packet->next;
-
 		/* unfortuntely unless this thread is at rtprio
 		 * you get pre-empted between fetching the time
 		 * and programming the packet and get a late packet
@@ -838,11 +828,16 @@ int main(int argc, char *argv[])
 			fprintf(stderr,"Failed to read from STDIN %s\n", argv[2]);
 			continue;
 		}
+		dbg_print_packet(stream_packet, payload_length);
 		samples_count += read_bytes;
 		h61883 = (six1883_header *)((uint8_t*)stream_packet + sizeof(eth_header) + sizeof(seventeen22_header));
 		avb_set_61883_data_block_continuity(h61883 , samples_count);
 
-		err = igb_xmit(&igb_dev, 0, tmp_packet);
+		ifr.ifr_data = (void *) &stream_packet;
+		sendto(lsock_audio, stream_packet, payload_length, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
+
+		printf("Testingz \n");
+		//err = igb_xmit(&igb_dev, 0, tmp_packet);
 		if (!err) {
 			fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			continue;
@@ -850,19 +845,6 @@ int main(int argc, char *argv[])
 			fprintf(stderr,"Failed frame sequence = %lld !!!!\n", frame_sequence++);
 		}
 
-		if (ENOSPC == err) {
-			/* put back for now */
-			tmp_packet->next = free_packets;
-			free_packets = tmp_packet;
-		}
-cleanup:
-		igb_clean(&igb_dev, &cleaned_packets);
-		while (cleaned_packets) {
-			tmp_packet = cleaned_packets;
-			cleaned_packets = cleaned_packets->next;
-			tmp_packet->next = free_packets;
-			free_packets = tmp_packet;
-		}
 	}
 
 	if (halt_tx == 0)
@@ -873,15 +855,8 @@ cleanup:
 #ifdef USE_MRPD
 	mrp_unadvertise_stream(STREAM_ID, DEST_ADDR, a_vid, packet_size - 16,
 			       PACKET_IPG / 125000, a_priority, 3900);
-#endif
-	/* disable Qav */
-	igb_set_class_bandwidth(&igb_dev, 0, 0, 0, 0);
-#ifdef USE_MRPD
 	err = mrp_disconnect();
 #endif
-	igb_dma_free_page(&igb_dev, &a_page);
-
-	err = igb_detach(&igb_dev);
 
 	pthread_exit(NULL);
 

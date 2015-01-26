@@ -21,8 +21,6 @@
 
 #include <inttypes.h>
 
-#include "igb.h"
-
 #define VALID		1
 #define INVALID		0
 
@@ -42,6 +40,16 @@
 #define STREAM_ID_SIZE		8
 
 #define ETHER_TYPE_AVTP		0x22f0
+
+struct igb_packet {
+	unsigned int	offset;		/* offset into physical page */
+	void		*vaddr;
+	u_int32_t 	len;
+	u_int32_t 	flags;
+	u_int64_t	attime;		/* launchtime */
+	u_int64_t	dmatime;	/* when dma tx desc wb*/
+	struct igb_packet *next;	/* used in the clean routine */
+};
 
 typedef struct __attribute__ ((packed)) {
 	uint64_t subtype:7;
@@ -107,8 +115,6 @@ typedef struct {
 } gPtpTimeData;
 
 typedef enum { false = 0, true = 1 } bool;
-
-int pci_connect(device_t * igb_dev);
 
 int gptpscaling(gPtpTimeData * td, char *memory_offset_buffer);
 

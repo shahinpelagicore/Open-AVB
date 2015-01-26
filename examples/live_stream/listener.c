@@ -53,8 +53,6 @@
 /* global macros */
 #define MAX_FRAME_SIZE		1500
 
-device_t igb_dev;
-
 unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
 
 unsigned char stream_id[8];
@@ -268,18 +266,6 @@ int main (int argc, char *argv[ ])
 	send_ready();
 #endif
 	iface = strdup(argv[1]);
-
-	error = pci_connect(&igb_dev);
-	if (error) {
-		fprintf(stderr, "connect failed (%s) - are you running as root?\n", strerror(errno));
-		return (errno);
-	}
-
-	error = igb_init(&igb_dev);
-	if (error) {
-		fprintf(stderr, "init failed (%s) - is the driver really loaded?\n", strerror(errno));
-		return (errno);
-	}
 
 	socket_descriptor = socket(AF_PACKET, SOCK_RAW, htons(ETHER_TYPE_AVTP));
 	if (socket_descriptor < 0) {
