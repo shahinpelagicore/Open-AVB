@@ -50,6 +50,8 @@
 
 #include "avb.h"
 
+#define DEBUG 1
+
 /* global macros */
 #define MAX_FRAME_SIZE		1500
 
@@ -60,7 +62,7 @@ unsigned char stream_id[8];
 int control_socket = 0;
 volatile int talker = 0;
 
-#define USE_MRPD 1
+//#define USE_MRPD 1
 
 #ifdef USE_MRPD
 int msg_process(char *buf, int buflen)
@@ -233,6 +235,18 @@ void sigint_handler(int signum)
 	exit(0);
 }
 
+
+void dbg_print_packet(uint8_t *buffer, int length)
+{
+  int i;
+
+  for (i = 0; i < length; i=i+2)
+    printf ("%02x%02x:", buffer[i], buffer[i+1]);
+  printf("\n");
+}
+
+
+
 int main (int argc, char *argv[ ])
 {
 	struct ifreq device;
@@ -317,11 +331,14 @@ int main (int argc, char *argv[ ])
 	while (1) {
 		error = recvfrom(socket_descriptor, frame, MAX_FRAME_SIZE, 0, (struct sockaddr *) &ifsock_addr, (socklen_t *)&size);
 		if (error > 0) {
-			fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
+		  //fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			h1722 = (seventeen22_header *)((uint8_t*)frame + sizeof(eth_header));
 			length = ntohs(h1722->length) - sizeof(six1883_header);
 			write(1, (uint8_t *)((uint8_t*)frame + sizeof(eth_header) + sizeof(seventeen22_header) +
 				sizeof(six1883_header)), length);
+			//dbg_print_packet((uint8_t *)((uint8_t*)frame + sizeof(eth_header) + sizeof(seventeen22_header) +
+			//	sizeof(six1883_header)), length);
+
 		} else {
 			fprintf(stderr,"recvfrom() error for frame sequence = %lld\n", frame_sequence++);
 		}

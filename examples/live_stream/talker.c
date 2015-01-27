@@ -828,17 +828,15 @@ int main(int argc, char *argv[])
 			fprintf(stderr,"Failed to read from STDIN %s\n", argv[2]);
 			continue;
 		}
-		dbg_print_packet(stream_packet, payload_length);
+		//dbg_print_packet(stream_packet, payload_length);
 		samples_count += read_bytes;
 		h61883 = (six1883_header *)((uint8_t*)stream_packet + sizeof(eth_header) + sizeof(seventeen22_header));
 		avb_set_61883_data_block_continuity(h61883 , samples_count);
 
 		ifr.ifr_data = (void *) &stream_packet;
-		sendto(lsock_audio, stream_packet, payload_length, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
+		err=sendto(lsock_audio, stream_packet, payload_length, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
 
-		printf("Testingz \n");
-		//err = igb_xmit(&igb_dev, 0, tmp_packet);
-		if (!err) {
+		if (err == payload_length) {
 			fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			continue;
 		} else {
