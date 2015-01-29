@@ -832,10 +832,10 @@ int main(int argc, char *argv[])
 		avb_set_61883_data_block_continuity(h61883 , samples_count);
 
 		ifr.ifr_data = (void *) &stream_packet;
-		err=sendto(lsock_audio, stream_packet, payload_length, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
+		err=sendto(lsock_audio, stream_packet, frame_size, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
 
-		if (err == payload_length) {
-			fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
+		if (err == frame_size) {
+		  //fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			continue;
 		} else {
 			fprintf(stderr,"Failed frame sequence = %lld !!!!\n", frame_sequence++);
