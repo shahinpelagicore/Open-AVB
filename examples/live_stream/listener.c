@@ -36,8 +36,6 @@
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
 
-#include <pci/pci.h>
-
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/resource.h>

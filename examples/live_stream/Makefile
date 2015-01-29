@@ -1,6 +1,6 @@
 CFLAGS=$(OPT) -Wall -W -Wno-parentheses
 EXTRA_FLAGS=-I../../daemons/mrpd -I../common
-EXTRA_FLAGS+=-lpci -lrt -lpthread
+EXTRA_FLAGS+=-lrt -lpthread
 INCFLAGS=../common/avb.c
 
 all:talker \
