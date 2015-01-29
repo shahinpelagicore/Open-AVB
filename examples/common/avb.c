@@ -31,7 +31,6 @@
 
 #include <netinet/in.h>
 
-#include <pci/pci.h>
 
 #include <sys/ioctl.h>
 #include <sys/mman.h>
