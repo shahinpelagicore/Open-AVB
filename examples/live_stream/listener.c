@@ -330,6 +330,8 @@ int main (int argc, char *argv[ ])
 
 	while (1) {
 		error = recvfrom(socket_descriptor, frame, MAX_FRAME_SIZE, 0, (struct sockaddr *) &ifsock_addr, (socklen_t *)&size);
+		//dbg_print_packet((uint8_t *)((uint8_t*)frame + sizeof(eth_header) + sizeof(seventeen22_header) +
+		//		sizeof(six1883_header)), length);
 		if (error > 0) {
 		  //fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			h1722 = (seventeen22_header *)((uint8_t*)frame + sizeof(eth_header));
