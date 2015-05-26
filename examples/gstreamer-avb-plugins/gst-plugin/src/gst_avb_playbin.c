@@ -72,12 +72,11 @@
 /* external function */
 extern int gstreamer_main(void);
 
-unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
+static unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
 
 /* global variables*/
-device_t igb_dev;
 int start_of_input_data = 0;
-int g_start_feed_socket = 0;
+static int g_start_feed_socket = 0;
 int g_exit_app = 0;
 char *talker_ip;
 int port;
@@ -87,7 +86,7 @@ unsigned int avb_init;
 struct sockaddr_ll ifsock_addr;
 int socket_d;
 seventeen22_header *h1722;
-long long int frame_sequence = 0;
+static long long int frame_sequence = 0;
 unsigned char frame[FRAME_SIZE];
 int size;
 struct tailq_entry *qptr;
@@ -420,7 +419,7 @@ void * gstreamer_main_loop(void *arg)
 	return NULL;
 }
 
-void sigint_handler(int signum)
+static void sigint_handler(int signum)
 {
 	printf("got SIGINT\n");
 	send_data_status(2);
@@ -448,18 +447,6 @@ gst_avbsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 		buff_size = PAYLOAD_SIZE;
 
 		start_feed_socket_init();
-
-		err = pci_connect(&igb_dev);
-		if (err) {
-			printf("connect failed (%s) - are you running as root?\n", strerror(errno));
-			return (errno);
-		}
-
-		err = igb_init(&igb_dev);
-		if (err) {
-			printf("init failed (%s) - is the driver really loaded?\n", strerror(errno));
-			return (errno);
-		}
 
 		socket_d = socket(AF_PACKET, SOCK_RAW, htons(ETHER_TYPE_AVTP));
 		if (socket_d == -1) {
@@ -556,28 +543,3 @@ gst_avbsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 
 	return GST_FLOW_OK;
 }
-
-static gboolean plugin_init(GstPlugin * plugin)
-{
-	if (!gst_element_register(plugin, "avbplaybin", GST_RANK_NONE,
-				  GST_TYPE_AVBSRC))
-		return FALSE;
-
-	return TRUE;
-
-}
-
-GST_PLUGIN_DEFINE (
-	GST_VERSION_MAJOR,
-	GST_VERSION_MINOR,
-	avbplaybin,
-	"Ethernet AVB Source Element",
-	plugin_init,
-	VERSION,
-	"LGPL",
-	"GStreamer",
-	"http://gstreamer.net/"
-)
-
-
-

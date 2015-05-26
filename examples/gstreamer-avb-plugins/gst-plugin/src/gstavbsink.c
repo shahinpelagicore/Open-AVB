@@ -71,16 +71,14 @@ volatile int listeners = 1;
 int flag_close_thread = 0;
 int control_socket = -1;
 int g_start_feeding = 1;
-int g_start_feed_socket = 0;
+static int g_start_feed_socket = 0;
 unsigned int avb_init;
-device_t igb_dev;
 uint32_t payload_len;
 unsigned char STATION_ADDR[] = { 0, 0, 0, 0, 0, 0 };
 unsigned char STREAM_ID[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /* IEEE 1722 reserved address */
-unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
-struct igb_dma_alloc a_page;
+static unsigned char DEST_ADDR[] = { 0x91, 0xE0, 0xF0, 0x00, 0x0E, 0x80 };
 struct igb_packet *tmp_packet;
 struct igb_packet *cleaned_packets;
 struct igb_packet *free_packets;
@@ -95,7 +93,7 @@ int64_t total_read_bytes;
 uint8_t *data_ptr;
 void *stream_packet;
 int frame_size;
-long long int frame_sequence = 0;
+static long long int frame_sequence = 0;
 char *interface1;
 GST_DEBUG_CATEGORY_STATIC (avbsink_debug);
 
@@ -204,7 +202,7 @@ uint64_t reverse_64(uint64_t val)
 	return val;
 }
 
-int start_feed_socket_init()
+static int start_feed_socket_init()
 {
 	int sock, length, rc, on = 1, flags ;
 	struct sockaddr_in server;
@@ -274,7 +272,6 @@ void * read_start_feed(void *arg)
 				listeners = 0;
 				halt_tx = 1;
 				/* disable Qav */
-				igb_set_class_bandwidth(&igb_dev, 0, 0, 0, 0);
 				pthread_exit(NULL);
 				exit(0);
 			}
@@ -286,7 +283,7 @@ void * read_start_feed(void *arg)
 
 
 
-void sigint_handler(int signum)
+static void sigint_handler(int signum)
 {
 	printf("got SIGINT\n");
 	halt_tx = signum;
@@ -297,10 +294,6 @@ void sigint_handler(int signum)
 void igb_cleanup()
 { 
 	int err;
-
-	igb_set_class_bandwidth(&igb_dev,0,0,0,0);
-	igb_dma_free_page(&igb_dev,&a_page);
-	err=igb_detach(&igb_dev);
 	exit(0);
 }
 
@@ -348,35 +341,17 @@ gst_avbsink_render (GstBaseSink * bsink, GstBuffer * buff)
 			fprintf(stderr,"payload_len is > MAX_ETH_PACKET_LEN - not supported.\n");
 			return -EINVAL;
 		}
-		err = pci_connect(&igb_dev);
-		if (err) {
-			printf("connect failed (%s) - are you running as root?\n", strerror(errno));
-			return (errno);
-		}
-		
-		err = igb_init(&igb_dev);
-		if (err) {
-			printf("init failed (%s) - is the driver really loaded?\n", strerror(errno));
-			return (errno);
-		}
-		err = igb_dma_malloc_page(&igb_dev, &a_page);
-		if (err) {
-			printf("malloc failed (%s) - out of memory?\n", strerror(errno));
-			return (errno);
-		}
+
 		signal(SIGINT, sigint_handler);
 		err = get_mac_addr(interface1);
 		if (err) {
 				printf("failed to open interface(%s)\n",interface1);
 		}
-		igb_set_class_bandwidth(&igb_dev, PACKET_IPG / 125000, 0, pkt_sz - 22, 0);
+
 		memset(STREAM_ID, 0, sizeof(STREAM_ID));
 		memcpy(STREAM_ID, STATION_ADDR, sizeof(STATION_ADDR));
 		a_packet.dmatime = a_packet.attime = a_packet.flags = 0;
-		a_packet.map.paddr = a_page.dma_paddr;
-		a_packet.map.mmap_size = a_page.mmap_size;
 		a_packet.offset = 0;
-		a_packet.vaddr = a_page.dma_vaddr + a_packet.offset;
 		a_packet.len = pkt_sz;
 		free_packets = NULL;
 		seqnum = 0;
@@ -413,21 +388,14 @@ gst_avbsink_render (GstBaseSink * bsink, GstBuffer * buff)
 		avb_1722_set_eth_type(stream_packet);
 
 		/* divide the dma page into buffers for packets */
-		for (i = 1; i < ((a_page.mmap_size) / pkt_sz); i++) {
-			tmp_packet = malloc(sizeof(struct igb_packet));
-			if (!tmp_packet) {
-				printf("failed to allocate igb_packet memory!\n");
-				return (errno);
-			}
-			*tmp_packet = a_packet;
-			tmp_packet->offset = (i * pkt_sz);
-			tmp_packet->vaddr += tmp_packet->offset;
-			tmp_packet->next = free_packets;
-			memset(tmp_packet->vaddr, 0, pkt_sz);	/* MAC header at least */
-			memcpy(((char *)tmp_packet->vaddr), stream_packet, frame_size);
-			tmp_packet->len = frame_size;
-			free_packets = tmp_packet;
-		}
+		*tmp_packet = a_packet;
+		tmp_packet->offset = (i * pkt_sz);
+		tmp_packet->vaddr += tmp_packet->offset;
+		tmp_packet->next = free_packets;
+		memset(tmp_packet->vaddr, 0, pkt_sz);	/* MAC header at least */
+		memcpy(((char *)tmp_packet->vaddr), stream_packet, frame_size);
+		tmp_packet->len = frame_size;
+		free_packets = tmp_packet;
 
 		start_feed_socket_init();
 		err = pthread_create(&tid, NULL, read_start_feed, NULL);
@@ -479,7 +447,7 @@ start:
 		h61883 = (six1883_header *)((uint8_t*)stream_packet + sizeof(eth_header) + sizeof(seventeen22_header));
 		avb_set_61883_data_block_continuity(h61883, total_samples);
 
-		err = igb_xmit(&igb_dev, 0, tmp_packet);
+		//err = igb_xmit(&igb_dev, 0, tmp_packet);
 		if (!err) {
 			fprintf(stderr,"frame sequence = %lld\n", frame_sequence++);
 			do{
@@ -498,7 +466,6 @@ start:
 		return GST_FLOW_OK;
 
 cleanup:
-		igb_clean(&igb_dev, &cleaned_packets);
 		while (cleaned_packets) {
 			tmp_packet = cleaned_packets;
 			cleaned_packets = cleaned_packets->next;
@@ -513,32 +480,8 @@ cleanup:
 
 exit_app:
 	  halt_tx = 1;
-	  igb_set_class_bandwidth(&igb_dev, 0, 0, 0, 0);
-	  igb_dma_free_page(&igb_dev, &a_page);
-	  igb_detach(&igb_dev);
 	  pthread_exit(NULL);
 
 	  return (0);
 }
 
-
-/* Plugin Registration */
-static gboolean plugin_init (GstPlugin * plugin)
-{
-	  if (!gst_element_register (plugin, "avbsink", GST_RANK_NONE,
-		  GST_TYPE_AVBSINK))
-		  return FALSE;
-
-	  return TRUE;
-}
-
-GST_PLUGIN_DEFINE (
-		GST_VERSION_MAJOR,
-		GST_VERSION_MINOR,
-		avbsink,
-		"Ethernet AVB Sink Element",
-		plugin_init,
-		VERSION,
-		"LGPL",
-		"GStreamer",
-		"http://gstreamer.net/")
